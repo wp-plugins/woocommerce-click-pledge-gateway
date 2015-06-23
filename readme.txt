@@ -2,7 +2,7 @@
 Contributors:      Click & Pledge
 Plugin Name:       WooCommerce Click & Pledge Gateway
 Plugin URI:        http://manual.clickandpledge.com/WooCommerce.html
-Tags:              woothemes,woocommerce,cnp,clickandpledge,payment gateway,payment module,ecommerce,online payments,Click & Pledge, Click&Pledge, Click, Pledge, Salesforce, Payment, Kamran
+Tags:              woothemes, woocommerce, cnp, clickandpledge, payment gateway, payment module, ecommerce, online payments, Click & Pledge, Click&Pledge, Click, Pledge, Salesforce, Payment, Kamran
 Author URI:        http://www.clickandpledge.com
 Author:            Click & Pledge
 Requires at least: 3.0.1 

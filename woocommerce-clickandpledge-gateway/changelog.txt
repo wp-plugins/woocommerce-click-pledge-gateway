@@ -1,4 +1,8 @@
 *** Click & Pledge Changelog ***
+2015.07.06 - Version 1.3.5
+* Added new features Zero Amount Processing
+* Compatible with 'WooCommerce Product Addons' plugin
+
 2015.06.02 - Version 1.3.4
 * Fixed Item Name issue
 

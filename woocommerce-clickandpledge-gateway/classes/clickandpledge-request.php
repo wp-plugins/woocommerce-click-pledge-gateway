@@ -39,8 +39,7 @@ class clickandpledge_request {
 		 $soapParams = array('instruction'=>$strParam);
 		 
 		 $response = $client->Operation($soapParams);
-//print_r($response);
-//die();
+
 		 if (($response === FALSE)) {
 		  return array('status' => 'fail', 'error' => 'Connection to payment gateway failed - no data returned.');
 		}
@@ -83,9 +82,7 @@ class clickandpledge_request {
 			$params['ResultCode'] = $ResultCode;
 			$params['status'] = 'Fail';			
 		}
-		//$items = $order->get_items();
-		//print_r($params);
-		//die();
+		
 		return $params;
 	}
 	
@@ -114,7 +111,8 @@ class clickandpledge_request {
 			 $ipaddress = $_SERVER['HTTP_FORWARDED'];
 		 else
 			 $ipaddress = $_SERVER['REMOTE_ADDR'];
-
+		$parts = explode(',', $ipaddress);
+        if(count($parts) > 1) $ipaddress = $parts[0];
 		 return $ipaddress; 
 	}
 	
@@ -149,7 +147,7 @@ class clickandpledge_request {
 		$applicationname=$dom->createElement('Name','CnP_WooCommerce_WordPress');
 		$applicationid=$application->appendChild($applicationname);
 
-		$applicationversion=$dom->createElement('Version','1.3.4');
+		$applicationversion=$dom->createElement('Version','1.3.5');
 		$applicationversion=$application->appendChild($applicationversion);
 
 		$request = $dom->createElement('Request', '');
@@ -180,7 +178,7 @@ class clickandpledge_request {
 				 
 		$order=$dom->createElement('Order','');
 		$order=$request->appendChild($order);
-
+	
 		if( $configValues['OrderMode'] == 'yes' ){
 		$orderMode = 'Test';
 		}else{		
@@ -352,78 +350,222 @@ class clickandpledge_request {
 		}//End of Shipping Address node
 		}
 		
+		$orderitemlist=$dom->createElement('OrderItemList','');
+		$orderitemlist=$order->appendChild($orderitemlist);
 		
-		$customfieldlist = $dom->createElement('CustomFieldList','');
-		$customfieldlist = $cardholder->appendChild($customfieldlist);
+		$UnitPriceCalculate = $UnitTaxCalculate = $ShippingValueCalculate = $ShippingTaxCalculate = $TotalDiscountCalculate = 0;			
+		$items = 0;
+		$custom_fields = array();
+		
+		foreach(WC()->cart->get_cart() as $i => $Item) {
+			$pdetails = new WC_Product($Item['product_id']);			
+			$variation_pdetails = new WC_Product_Variation($Item['variation_id']);			
 			
-		if( isset($orderplaced->billing_company) && $orderplaced->billing_company != '' )
-		{
-			$customfield = $dom->createElement('CustomField','');
-			$customfield = $customfieldlist->appendChild($customfield);
-				
-			$fieldname = $dom->createElement('FieldName','Billing Company Name');
-			$fieldname = $customfield->appendChild($fieldname);
-				
-			$fieldvalue = $dom->createElement('FieldValue',$this->safeString($orderplaced->billing_company, 500));
-			$fieldvalue = $customfield->appendChild($fieldvalue);
+			//Custom Meta Data
+			$othermetadata = get_post_meta($Item['product_id']);				
+			if(count($othermetadata) > 0) {
+				foreach($othermetadata as $keymeta => $valmeta) {				
+					if(substr($keymeta, 0, 1) != '_')
+					$custom_fields[$Item['data']->post->post_title][] = array($keymeta => $valmeta[0]);						
+				}
+			}			
+			$orderitem=$dom->createElement('OrderItem','');
+			$orderitem=$orderitemlist->appendChild($orderitem);
+
+			$itemid=$dom->createElement('ItemID',++$items);
+			$itemid=$orderitem->appendChild($itemid);
+
+			$itemname=$dom->createElement('ItemName',$this->safeString(trim($pdetails->post->post_title), 100));
+			$itemname=$orderitem->appendChild($itemname);
+
+			$quntity=$dom->createElement('Quantity',$Item['quantity']);
+			$quntity=$orderitem->appendChild($quntity);
+			
+			if(isset($Item['variation_id']) && $Item['variation_id'] != 0 && $Item['variation_id'] != '') {
+				$line_subtotal = $variation_pdetails->get_price();
+			} else {
+				$line_subtotal = $pdetails->get_price();
+			}
+			if( get_post_meta( $Item['product_id'] , '_nyp', true ) == 'yes' ) { //This will handle 'WooCommerce Name Your Price' plug-in data price
+				if(isset($Item['nyp']) && $Item['nyp'] != '') {
+					$line_subtotal = $Item['nyp'];
+				}
+			}
+			
+			$addons_total = 0;			
+			if(isset($Item['addons']) && is_array($Item['addons'])) {//This will handle 'WooCommerce Product Add-ons' plug-in data price				
+				foreach($Item['addons'] as $addons_key => $addons_val) {
+					if($addons_val['price'] != '') {
+						$name = $addons_val['name'] . ' (' . woocommerce_price( get_product_addon_price_for_display ( $addons_val['price'], $Item, true ) ) . ')';
+						$name = strip_tags($name);
+					} else {
+						$name = $addons_val['name'];
+					}
+					$custom_fields[$pdetails->post->post_title][] = array($name => $addons_val['value']);
+					if($addons_val['price'] != '') {
+						$addons_total += $addons_val['price'];
+					}					
+				}
+			}			
+			$line_subtotal = $line_subtotal + $addons_total;			
+			if( isset($params['clickandpledge_isRecurring']) &&  $params['clickandpledge_isRecurring'] == 'on' ) {
+				if($params['clickandpledge_RecurringMethod'] == 'Installment') {
+					if($params['clickandpledge_indefinite'] == 'on') {
+					$UnitPrice = ($this->number_format(($line_subtotal/999),2,'.','')*100);
+					$UnitPriceCalculate += ($this->number_format(($line_subtotal/999),2,'.','')*$Item['quantity']);
+					} else {
+					$UnitPrice = ($this->number_format(($line_subtotal/$params['clickandpledge_Installment']),2,'.','')*100);
+					$UnitPriceCalculate += ($this->number_format(($line_subtotal/$params['clickandpledge_Installment']),2,'.','')*$Item['quantity']);
+					}
+					$unitprice=$dom->createElement('UnitPrice', $UnitPrice);
+					$unitprice=$orderitem->appendChild($unitprice);
+				} else {				
+				$unitprice=$dom->createElement('UnitPrice',($line_subtotal*100));
+				$unitprice=$orderitem->appendChild($unitprice);
+				//New Fix
+				$UnitPriceCalculate += ($line_subtotal*$Item['quantity']);
+				}
+			} else {			
+			$unitprice=$dom->createElement('UnitPrice',($line_subtotal*100));
+			$unitprice=$orderitem->appendChild($unitprice);
+			$UnitPriceCalculate += ($line_subtotal*$Item['quantity']);
+			}
+			
+			if( isset( $Item['line_tax'] ) && $Item['line_tax'] != 0 ){
+				$get_item_tax = $this->get_item_cnptax($Item);				
+				if( isset($params['clickandpledge_isRecurring']) &&  $params['clickandpledge_isRecurring'] == 'on' ) {
+					if($params['clickandpledge_RecurringMethod'] == 'Installment') {
+					$UnitTax = $this->number_format(($get_item_tax/$params['clickandpledge_Installment']),2,'.','')*100;
+					$unit_tax=$dom->createElement('UnitTax', $UnitTax);
+					$unit_tax=$orderitem->appendChild($unit_tax);
+					$UnitTaxCalculate += ($this->number_format(($get_item_tax/$params['clickandpledge_Installment']),2,'.','')*$Item['quantity']);
+					} else {
+					$unit_tax=$dom->createElement('UnitTax',$this->number_format($get_item_tax,2,'.','')*100);
+					$unit_tax=$orderitem->appendChild($unit_tax);
+					$UnitTaxCalculate += ($this->number_format($get_item_tax,2,'.','')*$Item['quantity']);
+					}
+				}
+				else {
+				$unit_tax=$dom->createElement('UnitTax',$this->number_format($get_item_tax,2,'.','')*100);
+				$unit_tax=$orderitem->appendChild($unit_tax);
+				$UnitTaxCalculate += ($this->number_format($get_item_tax,2,'.','')*$Item['quantity']);
+				}
+			}
+			
+			if($Item['variation_id'] == 0) {
+				$sku = $pdetails->get_sku();
+			} else {
+				$sku = $variation_pdetails->get_sku();
+			}
+			if( $sku != '' ) {			
+				$sku_code=$dom->createElement('SKU',$this->safeString($sku, 25));
+				$sku_code=$orderitem->appendChild($sku_code);
+			}
+		}
+		if( isset($orderplaced->billing_company) && $orderplaced->billing_company != '' ) {
+			$custom_fields['Billing Company Name'][] = array('' => $orderplaced->billing_company);
+		}
+		if( isset($orderplaced->shipping_company) && $orderplaced->shipping_company != '' )	{
+			$custom_fields['Shipping Company Name'][] = array('' => $orderplaced->shipping_company);
+		}
+		if( isset($orderplaced->customer_note) && $orderplaced->customer_note != '' ){
+			$custom_fields['Order Notes'][] = array('' => $orderplaced->customer_note);
 		}
 		
-		if( isset($orderplaced->shipping_company) && $orderplaced->shipping_company != '' )
-		{
-			$customfield = $dom->createElement('CustomField','');
-			$customfield = $customfieldlist->appendChild($customfield);
-				
-			$fieldname = $dom->createElement('FieldName','Shipping Company Name');
-			$fieldname = $customfield->appendChild($fieldname);
-				
-			$fieldvalue = $dom->createElement('FieldValue',$this->safeString($orderplaced->shipping_company, 500));
-			$fieldvalue = $customfield->appendChild($fieldvalue);
-		}
-		
-		if( isset($orderplaced->customer_note) && $orderplaced->customer_note != '' )
-		{
-			$customfield = $dom->createElement('CustomField','');
-			$customfield = $customfieldlist->appendChild($customfield);
-				
-			$fieldname = $dom->createElement('FieldName','Order Notes');
-			$fieldname = $customfield->appendChild($fieldname);
-				
-			$fieldvalue = $dom->createElement('FieldValue',$this->safeString($orderplaced->customer_note, 500));
-			$fieldvalue = $customfield->appendChild($fieldvalue);
+		if(count($custom_fields) > 0) {
+			$customfieldlist = $dom->createElement('CustomFieldList','');
+			$customfieldlist = $cardholder->appendChild($customfieldlist);			
+			foreach($custom_fields as $key => $val)	{				
+				foreach($val as $v) {
+					$field_name_array = array_keys($v);
+					$field_value_array = array_values($v);
+					
+					$customfield = $dom->createElement('CustomField','');
+					$customfield = $customfieldlist->appendChild($customfield);
+					$FieldName = $key;
+					if($field_name_array[0] != '') $FieldName .= ' ('.$field_name_array[0].')';
+					$fieldname = $dom->createElement('FieldName',$this->safeString($FieldName, 200));
+					$fieldname = $customfield->appendChild($fieldname);
+						
+					$fieldvalue = $dom->createElement('FieldValue',$this->safeString($field_value_array[0], 500));
+					$fieldvalue = $customfield->appendChild($fieldvalue);
+				}
+			}
+			
 		}
 		
 		$paymentmethod=$dom->createElement('PaymentMethod','');
 		$paymentmethod=$cardholder->appendChild($paymentmethod);
-				
-		if($post['cnp_payment_method_selection'] == 'CreditCard') {
-			$payment_type=$dom->createElement('PaymentType','CreditCard');
-			$payment_type=$paymentmethod->appendChild($payment_type);
-		
-			$creditcard=$dom->createElement('CreditCard','');
-			$creditcard=$paymentmethod->appendChild($creditcard);
-				
-			if (isset($params['clickandpledge_name_on_card'])) {
-				$credit_card_name = $params['clickandpledge_name_on_card'];
-			}
-			else {
-				$credit_card_name = $params['billing_first_name'] . " ";
-			if (isset($params['billing_middle_name']) && !empty($params['billing_middle_name'])) {
-				$credit_card_name .= $params['billing_middle_name'] . " ";
-			}
-				$credit_card_name .= $params['billing_last_name'];
-			}
 			
-			$credit_name=$dom->createElement('NameOnCard',$this->safeString( $credit_card_name, 50));
-			$credit_name=$creditcard->appendChild($credit_name);
+		if($post['cnp_payment_method_selection'] == 'CreditCard') {
+			if($orderplaced->order_total == 0) {
+				if($settings['Preauthorization'] == 'yes') {
+					$payment_type=$dom->createElement('PaymentType','CreditCard');
+					$payment_type=$paymentmethod->appendChild($payment_type);
+				
+					$creditcard=$dom->createElement('CreditCard','');
+					$creditcard=$paymentmethod->appendChild($creditcard);
+						
+					if (isset($params['clickandpledge_name_on_card'])) {
+						$credit_card_name = $params['clickandpledge_name_on_card'];
+					}
+					else {
+						$credit_card_name = $params['billing_first_name'] . " ";
+					if (isset($params['billing_middle_name']) && !empty($params['billing_middle_name'])) {
+						$credit_card_name .= $params['billing_middle_name'] . " ";
+					}
+						$credit_card_name .= $params['billing_last_name'];
+					}
 					
-			$credit_number=$dom->createElement('CardNumber',$this->safeString( str_replace(' ', '', $params['clickandpledge_card_number']), 17));
-			$credit_number=$creditcard->appendChild($credit_number);
+					$credit_name=$dom->createElement('NameOnCard',$this->safeString( $credit_card_name, 50));
+					$credit_name=$creditcard->appendChild($credit_name);
+							
+					$credit_number=$dom->createElement('CardNumber',$this->safeString( str_replace(' ', '', $params['clickandpledge_card_number']), 17));
+					$credit_number=$creditcard->appendChild($credit_number);
 
-			$credit_cvv=$dom->createElement('Cvv2',$params['clickandpledge_card_csc']);
-			$credit_cvv=$creditcard->appendChild($credit_cvv);
+					$credit_cvv=$dom->createElement('Cvv2',$params['clickandpledge_card_csc']);
+					$credit_cvv=$creditcard->appendChild($credit_cvv);
 
-			$credit_expdate=$dom->createElement('ExpirationDate',str_pad($params['clickandpledge_card_expiration_month'],2,'0',STR_PAD_LEFT) ."/" .substr($params['clickandpledge_card_expiration_year'],2,2));
-			$credit_expdate=$creditcard->appendChild($credit_expdate);
+					$credit_expdate=$dom->createElement('ExpirationDate',str_pad($params['clickandpledge_card_expiration_month'],2,'0',STR_PAD_LEFT) ."/" .substr($params['clickandpledge_card_expiration_year'],2,2));
+					$credit_expdate=$creditcard->appendChild($credit_expdate);
+				} else {
+					$payment_type=$dom->createElement('PaymentType','CustomPaymentType');
+					$payment_type=$paymentmethod->appendChild($payment_type);			
+					$CustomPayment=$dom->createElement('CustomPaymentType','');
+					$CustomPayment=$paymentmethod->appendChild($CustomPayment);
+					$CustomPaymentName=$dom->createElement('CustomPaymentName','Free');
+					$CustomPaymentName=$CustomPayment->appendChild($CustomPaymentName);
+				}
+			} else {
+				$payment_type=$dom->createElement('PaymentType','CreditCard');
+				$payment_type=$paymentmethod->appendChild($payment_type);
+			
+				$creditcard=$dom->createElement('CreditCard','');
+				$creditcard=$paymentmethod->appendChild($creditcard);
+					
+				if (isset($params['clickandpledge_name_on_card'])) {
+					$credit_card_name = $params['clickandpledge_name_on_card'];
+				}
+				else {
+					$credit_card_name = $params['billing_first_name'] . " ";
+				if (isset($params['billing_middle_name']) && !empty($params['billing_middle_name'])) {
+					$credit_card_name .= $params['billing_middle_name'] . " ";
+				}
+					$credit_card_name .= $params['billing_last_name'];
+				}
+				
+				$credit_name=$dom->createElement('NameOnCard',$this->safeString( $credit_card_name, 50));
+				$credit_name=$creditcard->appendChild($credit_name);
+						
+				$credit_number=$dom->createElement('CardNumber',$this->safeString( str_replace(' ', '', $params['clickandpledge_card_number']), 17));
+				$credit_number=$creditcard->appendChild($credit_number);
+
+				$credit_cvv=$dom->createElement('Cvv2',$params['clickandpledge_card_csc']);
+				$credit_cvv=$creditcard->appendChild($credit_cvv);
+
+				$credit_expdate=$dom->createElement('ExpirationDate',str_pad($params['clickandpledge_card_expiration_month'],2,'0',STR_PAD_LEFT) ."/" .substr($params['clickandpledge_card_expiration_year'],2,2));
+				$credit_expdate=$creditcard->appendChild($credit_expdate);
+			}
 		}
 		elseif($post['cnp_payment_method_selection'] == 'eCheck') {
 			$payment_type=$dom->createElement('PaymentType','Check');
@@ -483,149 +625,16 @@ class clickandpledge_request {
 			$PurchaseOrder=$paymentmethod->appendChild($PurchaseOrder);			 
 			$CheckNumber=$dom->createElement('PurchaseOrderNumber',$post['PurchaseOrderNumber']);
 			$CheckNumber=$PurchaseOrder->appendChild($CheckNumber);
-		}
+		} else {			
+			$payment_type=$dom->createElement('PaymentType','CustomPaymentType');
+			$payment_type=$paymentmethod->appendChild($payment_type);			
+			$CustomPayment=$dom->createElement('CustomPaymentType','');
+			$CustomPayment=$paymentmethod->appendChild($CustomPayment);
+			$CustomPaymentName=$dom->createElement('CustomPaymentName',$this->safeString($post['cnp_payment_method_selection'],50));
+			$CustomPaymentName=$CustomPayment->appendChild($CustomPaymentName);
+		}		
 		
-		$orderitemlist=$dom->createElement('OrderItemList','');
-		$orderitemlist=$order->appendChild($orderitemlist);
-		
-		$UnitPriceCalculate = $UnitTaxCalculate = $ShippingValueCalculate = $ShippingTaxCalculate = $TotalDiscountCalculate = 0;			
-		$items = 0;
-		$custom_fields = array();
-		//echo '<pre>';
-		//print_r($orderplaced->get_items());
-		//die();
-		foreach($orderplaced->get_items() as $i => $Item) 
-		{
-			$metadata = get_post_meta($Item['product_id']);			
-			$pdetails = new WC_Product($Item['product_id']);			
-			$variation_pdetails = new WC_Product_Variation($Item['variation_id']);
-			$test = $orderplaced->get_product_from_item($Item);
-			foreach($metadata as $key => $val) {
-				if(substr($key, 0, 1) != '_')
-				$custom_fields[$Item['name']][] = array($key => $val[0]);
-			}			
-			
-			
-			if(isset($Item['variation_id']) && $Item['variation_id'] != 0) {
-				 if($variation_pdetails->has_attributes()) {
-					 $product_attributes = $variation_pdetails->get_attributes();
-					 foreach($product_attributes as $attr => $attr_val) {
-						$name = $attr_val['name'];
-						$custom_fields[$Item['name']][] = array($name => $Item[$attr]); 
-					 }
-				}
-			}			
-			
-			$orderitem=$dom->createElement('OrderItem','');
-			$orderitem=$orderitemlist->appendChild($orderitem);
-
-			$itemid=$dom->createElement('ItemID',++$items);
-			$itemid=$orderitem->appendChild($itemid);
-
-			$itemname=$dom->createElement('ItemName',$this->safeString(trim($Item['name']), 100));
-			$itemname=$orderitem->appendChild($itemname);
-
-			$quntity=$dom->createElement('Quantity',$Item['qty']);
-			$quntity=$orderitem->appendChild($quntity);
-			//echo '<pre>';
-			//print_r($Item);
-			//print_r($orderplaced->get_item_meta($i));
-			//print_r($variation_pdetails);
-			//echo $variation_pdetails->get_sale_price();
-			//die('ggggggggggggggggg');			
-			if(isset($Item['variation_id']) && $Item['variation_id'] != 0) {
-				$line_subtotal = $variation_pdetails->get_price();
-			} else {
-				$line_subtotal = $pdetails->get_price();
-			}
-			if($line_subtotal == '') { //This will handle when donations are used
-				$line_subtotal = $Item['line_total'];
-			}
-			//echo ($this->number_format(($line_subtotal/$params['clickandpledge_Installment']),2,'.','')*100);
-			//die('ooooooooooooooo');
-			if( isset($params['clickandpledge_isRecurring']) &&  $params['clickandpledge_isRecurring'] == 'on' ) {
-				if($params['clickandpledge_RecurringMethod'] == 'Installment') {
-					if($params['clickandpledge_indefinite'] == 'on') {
-					$UnitPrice = ($this->number_format(($line_subtotal/999),2,'.','')*100);
-					$UnitPriceCalculate += ($this->number_format(($line_subtotal/999),2,'.','')*$Item['qty']);
-					} else {
-					$UnitPrice = ($this->number_format(($line_subtotal/$params['clickandpledge_Installment']),2,'.','')*100);
-					$UnitPriceCalculate += ($this->number_format(($line_subtotal/$params['clickandpledge_Installment']),2,'.','')*$Item['qty']);
-					}
-					$unitprice=$dom->createElement('UnitPrice', $UnitPrice);
-					$unitprice=$orderitem->appendChild($unitprice);
-				} else {				
-				$unitprice=$dom->createElement('UnitPrice',($line_subtotal*100));
-				$unitprice=$orderitem->appendChild($unitprice);
-				//New Fix
-				$UnitPriceCalculate += ($line_subtotal*$Item['qty']);
-				}
-			} else {			
-			$unitprice=$dom->createElement('UnitPrice',($line_subtotal*100));
-			$unitprice=$orderitem->appendChild($unitprice);
-			$UnitPriceCalculate += ($line_subtotal*$Item['qty']);
-			}
-			
-			if( isset( $Item['line_tax'] ) && $Item['line_tax'] != 0 )
-			{
-				$get_item_tax = $orderplaced->get_item_tax($Item);
-				//die('fdffff');
-				if( isset($params['clickandpledge_isRecurring']) &&  $params['clickandpledge_isRecurring'] == 'on' ) {
-					if($params['clickandpledge_RecurringMethod'] == 'Installment') {
-					$UnitTax = $this->number_format(($get_item_tax/$params['clickandpledge_Installment']),2,'.','')*100;
-					$unit_tax=$dom->createElement('UnitTax', $UnitTax);
-					$unit_tax=$orderitem->appendChild($unit_tax);
-					$UnitTaxCalculate += ($this->number_format(($get_item_tax/$params['clickandpledge_Installment']),2,'.','')*$Item['qty']);
-					} else {
-					$unit_tax=$dom->createElement('UnitTax',$this->number_format($get_item_tax,2,'.','')*100);
-					$unit_tax=$orderitem->appendChild($unit_tax);
-					$UnitTaxCalculate += ($this->number_format($get_item_tax,2,'.','')*$Item['qty']);
-					}
-				}
-				else {
-				$unit_tax=$dom->createElement('UnitTax',$this->number_format($get_item_tax,2,'.','')*100);
-				$unit_tax=$orderitem->appendChild($unit_tax);
-				$UnitTaxCalculate += ($this->number_format($get_item_tax,2,'.','')*$Item['qty']);
-				}
-			}
-			
-			if($Item['variation_id'] == 0) {
-				$sku = $pdetails->get_sku();
-			} else {
-				$sku = $variation_pdetails->get_sku();
-			}
-			if( $sku != '' ) {			
-				$sku_code=$dom->createElement('SKU',$this->safeString($sku, 25));
-				$sku_code=$orderitem->appendChild($sku_code);
-			}
-
-		}					
-		//echo '<pre>';
-//print_r($custom_fields);
-//die();		
-		if(count($custom_fields)) 
-		{
-			foreach($custom_fields as $key => $val) 
-			{
-				foreach($val as $v) 
-				{
-					$field_name_array = array_keys($v);
-					$field_value_array = array_values($v);
-					
-					$customfield = $dom->createElement('CustomField','');
-					$customfield = $customfieldlist->appendChild($customfield);
-						
-					$fieldname = $dom->createElement('FieldName',$this->safeString($key . ' ('.$field_name_array[0].')', 200));
-					$fieldname = $customfield->appendChild($fieldname);
-						
-					$fieldvalue = $dom->createElement('FieldValue',$this->safeString($field_value_array[0], 500));
-					$fieldvalue = $customfield->appendChild($fieldvalue);
-				}
-			}
-		}
-		
-		if($orderplaced->needs_shipping_address()) {
-		//if(isset($orderplaced->order_shipping)){
+		if($orderplaced->needs_shipping_address()) {		
 			$shipping=$dom->createElement('Shipping','');
 			$shipping=$order->appendChild($shipping);
 			$ship = new WC_Shipping();
@@ -639,7 +648,7 @@ class clickandpledge_request {
 			$shiptitle = $shiptitle->title;	
 			$shipping_method=$dom->createElement('ShippingMethod',$this->safeString($shiptitle,50));
 			$shipping_method=$shipping->appendChild($shipping_method);
-			//print_r($shipp);
+			
 			if( isset($params['clickandpledge_isRecurring']) &&  $params['clickandpledge_isRecurring'] == 'on' ) {
 				if($params['clickandpledge_RecurringMethod'] == 'Installment') {
 				$ShippingValue = $this->number_format(($orderplaced->order_shipping/$params['clickandpledge_Installment']), 2, '.', '')*100;
@@ -655,11 +664,8 @@ class clickandpledge_request {
 			$shipping_value = $dom->createElement('ShippingValue',$this->number_format($orderplaced->order_shipping, 2, '.', '')*100);
 			$shipping_value=$shipping->appendChild($shipping_value);
 			$ShippingValueCalculate += $this->number_format($orderplaced->order_shipping, 2, '.', '');
-			}
+			}			
 			
-			//echo wc_round_tax_total($orderplaced->get_item_tax());
-			//echo $orderplaced->get_shipping_tax();
-			//die('gggggggggggggggggg');
 			if( $orderplaced->order_shipping_tax )
 			{
 				$order_shipping_tax = $orderplaced->get_shipping_tax();
@@ -697,12 +703,6 @@ class clickandpledge_request {
 			$recipt_org=$receipt->appendChild($recipt_org);
 		}
 		
-		if( $settings['ThankYouMessage'] != '')
-		{
-			$recipt_thanks=$dom->createElement('ThankYouMessage',$this->safeString($settings['ThankYouMessage'], 500));
-			$recipt_thanks=$receipt->appendChild($recipt_thanks);
-		}
-		
 		if( $settings['TermsCondition'] != '')
 		{
 			$recipt_terms=$dom->createElement('TermsCondition',$this->safeString($settings['TermsCondition'], 1500));
@@ -724,8 +724,23 @@ class clickandpledge_request {
 		$transation=$dom->createElement('Transaction','');
 		$transation=$order->appendChild($transation);
 
-		$trans_type=$dom->createElement('TransactionType','Payment');
-		$trans_type=$transation->appendChild($trans_type);
+		if($post['cnp_payment_method_selection'] == 'CreditCard' ) {			
+			if($orderplaced->order_total == 0) {
+				if($settings['Preauthorization'] == 'yes') {
+					$trans_type=$dom->createElement('TransactionType','PreAuthorization');
+					$trans_type=$transation->appendChild($trans_type);
+				} else {
+					$trans_type=$dom->createElement('TransactionType','Payment');
+					$trans_type=$transation->appendChild($trans_type);
+				}
+			} else {
+				$trans_type=$dom->createElement('TransactionType','Payment');
+				$trans_type=$transation->appendChild($trans_type);
+			}
+		} else {
+			$trans_type=$dom->createElement('TransactionType','Payment');
+			$trans_type=$transation->appendChild($trans_type);
+		}
 
 		$trans_desc=$dom->createElement('DynamicDescriptor','DynamicDescriptor');
 		$trans_desc=$transation->appendChild($trans_desc); 
@@ -809,7 +824,6 @@ class clickandpledge_request {
 		if( isset($params['clickandpledge_isRecurring']) &&  $params['clickandpledge_isRecurring'] == 'on' ) {
 		$TotalTaxCalculate = $UnitTaxCalculate+$ShippingTaxCalculate;
 		} else {
-			//$TotalTaxCalculate = $orderplaced->get_total_tax();
 			$TotalTaxCalculate = $UnitTaxCalculate+$ShippingTaxCalculate;
 		}
 		
@@ -896,6 +910,13 @@ class clickandpledge_request {
 		//die();
 		return $strParam;
 	  }
+	  
+	  public function get_item_cnptax( $item, $round = true ) {
+         $price = $item['line_tax'] / max( 1, $item['quantity'] );
+         $price = $round ? wc_round_tax_total( $price ) : $price;
+         return apply_filters( 'woocommerce_order_amount_item_tax', $price, $item, $round, $this );
+    }
+	  
 	  public function number_format($number, $decimals = 2,$decsep = '', $ths_sep = '') {
 		$parts = explode('.', $number);
 		if(count($parts) > 1) {

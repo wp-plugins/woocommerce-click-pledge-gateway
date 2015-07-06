@@ -3,7 +3,7 @@
 Plugin Name: WooCommerce Click & Pledge Gateway
 Plugin URI: http://manual.clickandpledge.com/
 Description: With Click & Pledge, Accept all major credit cards directly on your WooCommerce website with a seamless and secure checkout experience.<a href="http://manual.clickandpledge.com/" target="_blank">Click Here</a> to get a Click & Pledge account.
-Version: 1.3.4
+Version: 1.3.5
 Author: Click & Pledge
 Author URI: http://www.clickandpledge.com
 */
@@ -11,12 +11,17 @@ Author URI: http://www.clickandpledge.com
 add_action('plugins_loaded', 'woocommerce_clickandpledge_init', 0);
 
 function woocommerce_clickandpledge_init() {
-
+	
+	if ( !in_array( 'woocommerce/woocommerce.php', apply_filters( 'active_plugins', get_option( 'active_plugins' ) ) ) ) {
+		add_action( 'admin_notices', 'wc_cnp_notice' );
+	}
+	function wc_cnp_notice() {
+		echo '<div class="error"><p><strong> <i> WooCommerce Click & Pledge Gateway </i> </strong> Requires <a href="'.admin_url( 'plugin-install.php?tab=plugin-information&plugin=woocommerce').'"> <strong> <u>Woocommerce</u></strong>  </a> To Be Installed And Activated </p></div>';
+	}
+	
 	if ( ! class_exists( 'WC_Payment_Gateway' ) ) { return; }
 
-	require_once(WP_PLUGIN_DIR . "/" . plugin_basename( dirname(__FILE__)) . '/classes/clickandpledge-request.php');
-	//require_once(WP_PLUGIN_DIR . "/" . plugin_basename( dirname(__FILE__)) . '/classes/clickandpledge-response.php');
-	
+	require_once( WP_PLUGIN_DIR . "/" . plugin_basename( dirname(__FILE__)) . '/classes/clickandpledge-request.php' );	
 	/**
  	* Gateway class
  	**/
@@ -52,6 +57,7 @@ function woocommerce_clickandpledge_init() {
 			$this->Periodicity = array();
 			$this->RecurringMethod = array();
 			$this->available_cards = array();
+			$this->CustomPayments = array();
 			$this->maxrecurrings_Installment 	= $this->settings['maxrecurrings_Installment'];
 			$this->maxrecurrings_Subscription 	= $this->settings['maxrecurrings_Subscription'];
 			if(isset($this->settings['CreditCard']) && $this->settings['CreditCard'] == 'yes')
@@ -61,8 +67,20 @@ function woocommerce_clickandpledge_init() {
 			if(isset($this->settings['Invoice']) && $this->settings['Invoice'] == 'yes')
 			$this->Paymentmethods['Invoice'] = 'Invoice';
 			if(isset($this->settings['PurchaseOrder']) && $this->settings['PurchaseOrder'] == 'yes')
-			$this->Paymentmethods['PurchaseOrder'] = 'Purchase Order';
-			
+			$this->Paymentmethods['PurchaseOrder'] = 'Purchase Order';			
+			//print_r($this->settings);
+			if(isset($this->settings['CustomPayment']) && $this->settings['CustomPayment'] == 'yes') {
+				$CustomPayments = explode(';', html_entity_decode($this->settings['CustomPayment_Titles']));
+				if(count($CustomPayments) > 0) {
+					foreach($CustomPayments as $key => $val) {
+						if(trim($val) != '') {
+							$this->Paymentmethods[trim($val)] = trim($val);
+							$this->CustomPayments[] = trim($val);
+						}
+					}
+				}				
+			}			
+			//print_r($this->CustomPayments);
 			//Available Credit Cards
 			if((isset($this->settings['Visa']) && ($this->settings['Visa'] == 'yes') )){
 				$this->available_cards['Visa']		= 'Visa';
@@ -156,8 +174,8 @@ function woocommerce_clickandpledge_init() {
 		/**
 	     * Initialize Gateway Settings Form Fields
 	     */
-	    function init_form_fields() {
-			$paddingleft = 80;
+	    function init_form_fields() {			
+			$paddingleft = 80;			
 	    	$this->form_fields = array(
 				'enabled' => array(
 								'title' => __( 'Status', 'woothemes' ), 
@@ -191,7 +209,7 @@ function woocommerce_clickandpledge_init() {
 								'title' => __( 'Description', 'woothemes' ), 
 								'type' => 'text', 
 								'description' => __( 'The payment description.', 'woothemes' ), 
-								'default' => 'Pay with your Credit Card.',
+								'default' => 'Pay with Click & Pledge Payment Gateway.',
 								'desc_tip'    => true,
 							),  
 				
@@ -211,6 +229,7 @@ function woocommerce_clickandpledge_init() {
 								'maxlength' => 200,
 								'desc_tip'    => true,
 							),
+				
 											
 				
 							
@@ -224,6 +243,14 @@ function woocommerce_clickandpledge_init() {
 								'type' => 'checkbox', 
 								'description' => __( '', 'woothemes' ), 
 								'default' => 'yes',
+								'label'       => __( ' ', 'woocommerce' ),
+							),
+				'Preauthorization' => array(
+								'title' => __( 'Allow Pre-Authorization for 0 (Zero) balance', 'woothemes' ), 
+								'type' => 'checkbox', 
+								'description' => __( 'To allow for processing free transactions, the following manual change has to be made to the "needs_payment" function in "woocommerce/includes/class-wc-cart.php".<br> <b>Original code</b>: return apply_filters( \'woocommerce_cart_needs_payment\', $this->total > 0, $this );<br>
+<b>Modified code</b>: return apply_filters( \'woocommerce_cart_needs_payment\', $this->total >= 0, $this );<br>This code change has to be made after each upgrade of woocommerce.', 'woothemes' ),
+								'default' => 'no',
 								'label'       => __( ' ', 'woocommerce' ),
 							),
 				'eCheck' => array(
@@ -244,7 +271,19 @@ function woocommerce_clickandpledge_init() {
 								'description' => __( '', 'woothemes' ),
 								'label'       => __( ' ', 'woocommerce' ),
 							),			
-				
+				'CustomPayment' => array(
+								'title' => __( '<span style="padding-left:'.$paddingleft.'px;">Custom Payment</span>', 'woothemes' ), 
+								'type' => 'checkbox', 
+								'description' => __( '', 'woothemes' ),
+								'label'       => __( ' ', 'woocommerce' ),
+							),
+				'CustomPayment_Titles' => array(
+								'title' => __( 'Title(s)', 'woothemes' ), 
+								'type' => 'textarea', 
+								'description' => __( 'Separate with semicolon (;)', 'woothemes' ), 
+								'default' => '',
+								'maxlength' => 1500,
+							),
 				'DefaultpaymentMethod' => array(
 								'title' => __( 'Default Payment Method', 'woothemes' ), 
 								'type' => 'select',
@@ -490,16 +529,8 @@ function woocommerce_clickandpledge_init() {
 				displaycheck();
 				recurringdisplay();
 				
-				function displaycheck() {				
-					/*
-					if(jQuery('#woocommerce_clickandpledge_cnp_email_customer').is(':checked')) {
-						jQuery('#woocommerce_clickandpledge_OrganizationInformation').closest('tr').show();
-						jQuery('#woocommerce_clickandpledge_TermsCondition').closest('tr').show();
-					} else {
-						jQuery('#woocommerce_clickandpledge_OrganizationInformation').closest('tr').hide();
-						jQuery('#woocommerce_clickandpledge_TermsCondition').closest('tr').hide();
-					}
-					*/
+				
+				function displaycheck() {
 					if(!jQuery('#woocommerce_clickandpledge_CreditCard').is(':checked') && !jQuery('#woocommerce_clickandpledge_eCheck').is(':checked')) {
 						jQuery('.CredicardSection').next('table').hide();
 						jQuery('.CredicardSection').hide();
@@ -510,16 +541,19 @@ function woocommerce_clickandpledge_init() {
 						if(jQuery('#woocommerce_clickandpledge_CreditCard').is(':checked')) {
 							jQuery('.CredicardSection').next('table').show();
 							jQuery('.CredicardSection').show();
+							jQuery('#woocommerce_clickandpledge_Preauthorization').closest('tr').show();
 						} else {
 							jQuery('.CredicardSection').next('table').hide();
 							jQuery('.CredicardSection').hide();
+							jQuery('#woocommerce_clickandpledge_Preauthorization').closest('tr').hide();
 						}
 						
 						if(jQuery('#woocommerce_clickandpledge_CreditCard').is(':checked') || jQuery('#woocommerce_clickandpledge_eCheck').is(':checked')) {
 							jQuery('.RecurringSection').next('table').show();
 							jQuery('.RecurringSection').show();
 						}
-					}
+					}	
+					
 					defaultpayment();
 				}
 				function defaultpayment() {
@@ -543,6 +577,15 @@ function woocommerce_clickandpledge_init() {
 						paymethods.push('PurchaseOrder');
 						paymethods_titles.push('Purchase Order');
 					}
+					
+					if(jQuery('#woocommerce_clickandpledge_CustomPayment').is(':checked')) {
+						jQuery('#woocommerce_clickandpledge_CustomPayment_Titles').closest('tr').show();
+						paymethods.push('CustomPayment');
+						paymethods_titles.push('Custom Payment');
+					} else {
+						jQuery('#woocommerce_clickandpledge_CustomPayment_Titles').closest('tr').hide();
+					}
+					
 					if(paymethods.length > 0) {
 						for(var i = 0; i < paymethods.length; i++) {
 							if(paymethods[i] == defaultval) {
@@ -556,6 +599,7 @@ function woocommerce_clickandpledge_init() {
 					}
 					jQuery('#woocommerce_clickandpledge_DefaultpaymentMethod').html(str);
 				}
+				
 				jQuery( "form" ).submit(function( event ) {
 					if(jQuery('#woocommerce_clickandpledge_title').val() == '')
 					{
@@ -606,6 +650,10 @@ function woocommerce_clickandpledge_init() {
 					{
 						paymethods++;
 					}
+					if(jQuery('#woocommerce_clickandpledge_CustomPayment').is(':checked'))
+					{
+						paymethods++;
+					}
 					
 					if(paymethods == 0) {
 						alert('Please select at least  one payment method');
@@ -641,6 +689,13 @@ function woocommerce_clickandpledge_init() {
 						jQuery('#woocommerce_clickandpledge_Visa').focus();
 						return false;						
 					}
+					if(jQuery('#woocommerce_clickandpledge_CustomPayment').is(':checked') && jQuery.trim(jQuery('#woocommerce_clickandpledge_CustomPayment_Titles').val()) == '') {
+						alert('Please enter at least one payment method name');
+						jQuery('#woocommerce_clickandpledge_CustomPayment_Titles').val('');
+						jQuery('#woocommerce_clickandpledge_CustomPayment_Titles').focus();
+						return false;	
+					}
+					
 					
 					if(jQuery('#woocommerce_clickandpledge_isRecurring').val() == 1)
 					{
@@ -732,26 +787,17 @@ function woocommerce_clickandpledge_init() {
 				jQuery('#woocommerce_clickandpledge_OrganizationInformation').keyup(function(){
 					limitText(jQuery('#woocommerce_clickandpledge_OrganizationInformation'),jQuery('#OrganizationInformation_countdown'),1500);
 				});
-				/*
-				//Receipt Settings
-				jQuery('#woocommerce_clickandpledge_cnp_email_customer').click(function(){
-					if(jQuery('#woocommerce_clickandpledge_cnp_email_customer').is(':checked')) {
-						jQuery('#woocommerce_clickandpledge_OrganizationInformation').closest('tr').show();
-						jQuery('#woocommerce_clickandpledge_TermsCondition').closest('tr').show();
-					} else {
-						jQuery('#woocommerce_clickandpledge_OrganizationInformation').closest('tr').hide();
-						jQuery('#woocommerce_clickandpledge_TermsCondition').closest('tr').hide();
-					}
-				});
-				*/
+								
 				//Payment Methods
 				jQuery('#woocommerce_clickandpledge_CreditCard').click(function(){
 					if(jQuery('#woocommerce_clickandpledge_CreditCard').is(':checked')) {
 						jQuery('.CredicardSection').next('table').show();
 						jQuery('.CredicardSection').show();
+						jQuery('#woocommerce_clickandpledge_Preauthorization').closest('tr').show();
 					} else {
 						jQuery('.CredicardSection').next('table').hide();
 						jQuery('.CredicardSection').hide();
+						jQuery('#woocommerce_clickandpledge_Preauthorization').closest('tr').hide();
 					}
 					
 					if(!jQuery('#woocommerce_clickandpledge_CreditCard').is(':checked') && !jQuery('#woocommerce_clickandpledge_eCheck').is(':checked')) {
@@ -784,6 +830,9 @@ function woocommerce_clickandpledge_init() {
 					defaultpayment();
 				});
 				jQuery('#woocommerce_clickandpledge_PurchaseOrder').click(function(){
+					defaultpayment();
+				});
+				jQuery('#woocommerce_clickandpledge_CustomPayment').click(function(){					
 					defaultpayment();
 				});
 				//TermsCondition
@@ -939,57 +988,109 @@ function woocommerce_clickandpledge_init() {
 			if(empty($user_country)) :
 				echo __('Select a country to see the payment form', 'woothemes');
 				return;
-			endif;
-			
-			//print_r($this->settings);			
-			//$available_cards = $this->avaiable_countries[$user_country];
+			endif;		
 			$available_cards = $this->available_cards;
-			//print_r($available_cards);
+			
 			?>
 			<?php if ($this->testmode=='yes') : ?><p><?php _e('TEST MODE/SANDBOX ENABLED', 'woothemes'); ?></p><?php endif; ?>
 			<?php if ($this->description) : ?><p><?php echo $this->description; ?></p><?php endif; ?>
-			<?php 
+			<?php
 			if(count($this->Paymentmethods) > 0) {
+				//print_r($this->Paymentmethods);
 				echo '<span style="width:980px" id="payment_methods">';
-				foreach($this->Paymentmethods as $pkey => $pval) {
-					if($pkey == $this->defaultpayment) {
-					echo '<input type="radio" id="cnp_payment_method_selection_'.$pkey.'" name="cnp_payment_method_selection" class="cnp_payment_method_selection" style="margin: 0 0 0 0;" value="'.$pkey.'" checked>&nbsp<b>'.$pval.'</b>&nbsp;&nbsp;&nbsp;';
+				if(!in_array($this->defaultpayment,array('CreditCard','eCheck','Invoice','PurchaseOrder'))) {
+					if(count($this->CustomPayments) > 0) {
+						$this->defaultpayment = $this->CustomPayments[0];
 					} else {
-					echo '<input type="radio" id="cnp_payment_method_selection_'.$pkey.'" name="cnp_payment_method_selection" class="cnp_payment_method_selection" style="margin: 0 0 0 0;" value="'.$pkey.'">&nbsp;<b>'.$pval.'</b>&nbsp;&nbsp;&nbsp;';
+						$this->CustomPayments[] = 'Free';
+						$this->defaultpayment = $this->CustomPayments[0];
+					}
+				} else if(WC()->cart->total == 0 && (isset($this->settings['Preauthorization']) && $this->settings['Preauthorization'] == 'yes') && in_array($this->defaultpayment, array('CreditCard','eCheck','Invoice','PurchaseOrder'))){
+					if($this->defaultpayment == 'CreditCard') {
+						$this->defaultpayment = 'CreditCard';
+					} else if(count($this->CustomPayments) > 0) {
+						$this->defaultpayment = $this->CustomPayments[0];
+					} else {
+						$this->Paymentmethods['Free'] = 'Free';
+						$this->CustomPayments[] = 'Free';
+						$this->defaultpayment = $this->CustomPayments[0];
+					}
+				} else if(WC()->cart->total == 0 && (isset($this->settings['Preauthorization']) && $this->settings['Preauthorization'] == 'no') && in_array($this->defaultpayment, array('CreditCard','eCheck','Invoice','PurchaseOrder'))){
+					if(count($this->CustomPayments) > 0) {
+						$this->defaultpayment = $this->CustomPayments[0];
+					} else {
+						$this->Paymentmethods['Free'] = 'Free';
+						$this->CustomPayments[] = 'Free';
+						$this->defaultpayment = $this->CustomPayments[0];
+					}
+				}
+//echo $this->defaultpayment.'##########';				
+				foreach($this->Paymentmethods as $pkey => $pval) {
+					if(WC()->cart->total == 0 && (isset($this->settings['Preauthorization']) && $this->settings['Preauthorization'] == 'no') && in_array($pkey, array('CreditCard','eCheck','Invoice','PurchaseOrder'))){
+						if(in_array($this->defaultpayment,array('CreditCard','eCheck','Invoice','PurchaseOrder'))) {
+							if(count($this->CustomPayments) > 0) {
+								$this->defaultpayment = $this->CustomPayments[0];
+							}
+						}
+					} else if(WC()->cart->total == 0 && (isset($this->settings['Preauthorization']) && $this->settings['Preauthorization'] == 'yes') && in_array($pkey, array('CreditCard'))){
+						if($pkey == $this->defaultpayment) {
+							echo '<input type="radio" id="cnp_payment_method_selection_'.$pkey.'" name="cnp_payment_method_selection" class="cnp_payment_method_selection" onclick="displaysection(this.value);" style="margin: 0 0 0 0;" value="'.$pkey.'" checked>&nbsp<b>'.$pval.'</b>&nbsp;&nbsp;&nbsp;';
+						} else {
+							echo '<input type="radio" id="cnp_payment_method_selection_'.$pkey.'" name="cnp_payment_method_selection" class="cnp_payment_method_selection" onclick="displaysection(this.value);" style="margin: 0 0 0 0;" value="'.$pkey.'">&nbsp;<b>'.$pval.'</b>&nbsp;&nbsp;&nbsp;';
+						}
+					}
+					else if(WC()->cart->total == 0 && (isset($this->settings['Preauthorization']) && $this->settings['Preauthorization'] == 'no') && !in_array($pkey, array('eCheck','Invoice','PurchaseOrder'))){
+						if($pkey == $this->defaultpayment) {
+							echo '<input type="radio" id="cnp_payment_method_selection_'.$pkey.'" name="cnp_payment_method_selection" class="cnp_payment_method_selection" onclick="displaysection(this.value);" style="margin: 0 0 0 0;" value="'.$pkey.'" checked>&nbsp<b>'.$pval.'</b>&nbsp;&nbsp;&nbsp;';
+						} else {
+							echo '<input type="radio" id="cnp_payment_method_selection_'.$pkey.'" name="cnp_payment_method_selection" class="cnp_payment_method_selection" onclick="displaysection(this.value);" style="margin: 0 0 0 0;" value="'.$pkey.'">&nbsp;<b>'.$pval.'</b>&nbsp;&nbsp;&nbsp;';
+						}
+					} else if(WC()->cart->total == 0 && (isset($this->settings['Preauthorization']) && $this->settings['Preauthorization'] == 'yes') && !in_array($pkey, array('eCheck','Invoice','PurchaseOrder'))){
+						if($pkey == $this->defaultpayment) {
+							echo '<input type="radio" id="cnp_payment_method_selection_'.$pkey.'" name="cnp_payment_method_selection" class="cnp_payment_method_selection" onclick="displaysection(this.value);" style="margin: 0 0 0 0;" value="'.$pkey.'" checked>&nbsp<b>'.$pval.'</b>&nbsp;&nbsp;&nbsp;';
+						} else {
+							echo '<input type="radio" id="cnp_payment_method_selection_'.$pkey.'" name="cnp_payment_method_selection" class="cnp_payment_method_selection" onclick="displaysection(this.value);" style="margin: 0 0 0 0;" value="'.$pkey.'">&nbsp;<b>'.$pval.'</b>&nbsp;&nbsp;&nbsp;';
+						}
+					}else if(WC()->cart->total > 0){
+						if($pkey == $this->defaultpayment) {
+							echo '<input type="radio" id="cnp_payment_method_selection_'.$pkey.'" name="cnp_payment_method_selection" class="cnp_payment_method_selection" onclick="displaysection(this.value);" style="margin: 0 0 0 0;" value="'.$pkey.'" checked>&nbsp<b>'.$pval.'</b>&nbsp;&nbsp;&nbsp;';
+						} else {
+							echo '<input type="radio" id="cnp_payment_method_selection_'.$pkey.'" name="cnp_payment_method_selection" class="cnp_payment_method_selection" onclick="displaysection(this.value);" style="margin: 0 0 0 0;" value="'.$pkey.'">&nbsp;<b>'.$pval.'</b>&nbsp;&nbsp;&nbsp;';
+						}
 					}
 				}
 				echo '</span>';
 			}
 			?>
 			<script>
-				jQuery('#cnp_payment_method_selection_CreditCard').click(function(){
-					jQuery('#cnp_CreditCard_div').show();					
-					jQuery('#cnp_eCheck_div').hide();
-					jQuery('#cnp_Invoice_div').hide();
-					jQuery('#cnp_PurchaseOrder_div').hide();
-					
-				});
-				jQuery('#cnp_payment_method_selection_eCheck').click(function(){
-					jQuery('#cnp_CreditCard_div').hide();					
-					jQuery('#cnp_eCheck_div').show();
-					jQuery('#cnp_Invoice_div').hide();
-					jQuery('#cnp_PurchaseOrder_div').hide();
-					
-				});
-				jQuery('#cnp_payment_method_selection_Invoice').click(function(){
-					jQuery('#cnp_CreditCard_div').hide();					
-					jQuery('#cnp_eCheck_div').hide();
-					jQuery('#cnp_Invoice_div').show();
-					jQuery('#cnp_PurchaseOrder_div').hide();
-					
-				});
-				jQuery('#cnp_payment_method_selection_PurchaseOrder').click(function(){
-					jQuery('#cnp_CreditCard_div').hide();					
-					jQuery('#cnp_eCheck_div').hide();
-					jQuery('#cnp_Invoice_div').hide();
-					jQuery('#cnp_PurchaseOrder_div').show();
-					
-				});
+				function displaysection(sec) {
+					if(sec == 'CreditCard') {
+						jQuery('#cnp_CreditCard_div').show();					
+						jQuery('#cnp_eCheck_div').hide();
+						jQuery('#cnp_Invoice_div').hide();
+						jQuery('#cnp_PurchaseOrder_div').hide();
+					} else if(sec == 'eCheck') {
+						jQuery('#cnp_CreditCard_div').hide();					
+						jQuery('#cnp_eCheck_div').show();
+						jQuery('#cnp_Invoice_div').hide();
+						jQuery('#cnp_PurchaseOrder_div').hide();
+					} else if(sec == 'Invoice') {
+						jQuery('#cnp_CreditCard_div').hide();					
+						jQuery('#cnp_eCheck_div').hide();
+						jQuery('#cnp_Invoice_div').show();
+						jQuery('#cnp_PurchaseOrder_div').hide();
+					} else if(sec == 'PurchaseOrder') {
+						jQuery('#cnp_CreditCard_div').hide();					
+						jQuery('#cnp_eCheck_div').hide();
+						jQuery('#cnp_Invoice_div').hide();
+						jQuery('#cnp_PurchaseOrder_div').show();
+					} else {
+						jQuery('#cnp_CreditCard_div').hide();					
+						jQuery('#cnp_eCheck_div').hide();
+						jQuery('#cnp_Invoice_div').hide();
+						jQuery('#cnp_PurchaseOrder_div').hide();
+					}
+				}
 			</script>
 			
 			<div style="display:<?php if($this->defaultpayment == 'CreditCard') echo 'block'; else echo 'none';?>;" id="cnp_CreditCard_div">
@@ -1011,7 +1112,7 @@ function woocommerce_clickandpledge_init() {
 				?></p>
 			<?php } ?>
 				<?php 
-				if($this->isRecurring) { ?>
+				if($this->isRecurring && WC()->cart->total > 0) { ?>
 				<script type="text/javascript">
 				jQuery( document ).ready(function(){		
 					if(jQuery('#clickandpledge_isRecurring').is(':checked')) {
@@ -1029,13 +1130,9 @@ function woocommerce_clickandpledge_init() {
 					jQuery('#clickandpledge_indefinite').click(function(){
 						if(jQuery('#clickandpledge_indefinite').is(':checked')) {
 							jQuery('#clickandpledge_Installment').val('');	
-							jQuery('#clickandpledge_Installment_req').hide();						
-							//jQuery('#clickandpledge_Installment_req').html('');
-							//jQuery('#clickandpledge_Installment').attr('readonly', true);
+							jQuery('#clickandpledge_Installment_req').hide();
 						} else {
-							jQuery('#clickandpledge_Installment_req').show();	
-							//jQuery('#clickandpledge_Installment_req').html('<font color="#FF0000">*</font>');
-							//jQuery('#clickandpledge_Installment').attr('readonly', false);
+							jQuery('#clickandpledge_Installment_req').show();
 						}
 					});
 				});
@@ -1177,33 +1274,7 @@ function woocommerce_clickandpledge_init() {
 				</p>
 				<p class="form-row form-row-last">
 					<label for="clickandpledge_card_csc"><?php _e("Card Verification (CVV)", 'woocommerce') ?> <span class="required">*</span></label>
-					<input type="text" class="input-text" id="clickandpledge_card_csc" name="clickandpledge_card_csc" maxlength="4" style="width:59px" placeholder="cvv"/>
-					<script>
-					function GetCreditCardType(CreditCardNumber)
-					{
-						var regVisa = "^4[0-9]{12}(?:[0-9]{3})?$";
-						var regMaster = "^5[1-5][0-9]{14}$";
-						var regExpress = "^3[47][0-9]{13}$";
-						var regDiners = "^3(?:0[0-5]|[68][0-9])[0-9]{11}$";
-						var regDiscover = "^6(?:011|5[0-9]{2})[0-9]{12}$";
-						var regJSB= "^(?:2131|1800|35\\d{3})\\d{11}$";
-
-
-						if(regVisa.test(CreditCardNumber))
-							return "VISA";
-						if (regMaster.test(CreditCardNumber))
-							return "MASTER";
-						if (regExpress.test(CreditCardNumber))
-							return "AEXPRESS";
-						if (regDiners.test(CreditCardNumber))
-							return "DINERS";
-						if (regDiscover.test(CreditCardNumber))
-							return "DISCOVERS";
-						if (regJSB.test(CreditCardNumber))
-							return "JSB";
-						return "invalid";
-					}
-					</script>
+					<input type="text" class="input-text" id="clickandpledge_card_csc" name="clickandpledge_card_csc" maxlength="4" style="width:59px" placeholder="cvv"/>					
 					<span class="help clickandpledge_card_csc_description"></span>
 				</p>
 				
@@ -1243,7 +1314,7 @@ function woocommerce_clickandpledge_init() {
 				
 				<?php
 				echo "<p><img src='".WP_PLUGIN_URL . "/" . plugin_basename( dirname(__FILE__)) . "/images/eCheck.png' title='eCheck' alt='eCheck'/></p>";
-				if($this->isRecurring) { ?>
+				if($this->isRecurring && WC()->cart->total > 0) { ?>
 				<script type="text/javascript">
 				jQuery( document ).ready(function(){		
 					if(jQuery('#clickandpledge_isRecurring_echeck').is(':checked')) {
@@ -1511,11 +1582,9 @@ function woocommerce_clickandpledge_init() {
 				$posted_settings['cnp_email_customer'] = $this->settings['cnp_email_customer'];
 				$posted_settings['Total'] = $order->order_total;
 				$posted_settings['OrderMode'] = $this->testmode;
-				
-				$posted_settings['OrganizationInformation'] = $this->settings['OrganizationInformation'];
-				
-				$posted_settings['TermsCondition'] = $this->settings['TermsCondition'];
-			
+				$posted_settings['Preauthorization'] = isset($this->settings['Preauthorization']) ? $this->settings['Preauthorization'] : 'no';		
+				$posted_settings['OrganizationInformation'] = $this->settings['OrganizationInformation'];				
+				$posted_settings['TermsCondition'] = $this->settings['TermsCondition'];			
 				$response = $request->send($posted_settings, $_POST, $order);
 			
 			} catch(Exception $e) {
@@ -1584,22 +1653,22 @@ function woocommerce_clickandpledge_init() {
 				* JCB: Must have a prefix of 3, 1800, or 2131, and must be either 15 or 16 digits in length.
 			*/
 	 
-			if (ereg("^5[1-5][0-9]{14}$", $ccNum))
+			if (preg_match("/^5[1-5][0-9]{14}$/", $ccNum))
 					return "MasterCard";
 	 
-			if (ereg("^4[0-9]{12}([0-9]{3})?$", $ccNum))
+			if (preg_match("/^4[0-9]{12}([0-9]{3})?$/", $ccNum))
 					return "Visa";
 	 
-			if (ereg("^3[47][0-9]{13}$", $ccNum))
+			if (preg_match("/^3[47][0-9]{13}$/", $ccNum))
 					return "American Express";
 	 
-			if (ereg("^3(0[0-5]|[68][0-9])[0-9]{11}$", $ccNum))
+			if (preg_match("/^3(0[0-5]|[68][0-9])[0-9]{11}$/", $ccNum))
 					return "Diners Club";
 	 
-			if (ereg("^6011[0-9]{12}$", $ccNum))
+			if (preg_match("/^6011[0-9]{12}$/", $ccNum))
 					return "Discover";
 	 
-			if (ereg("^(3[0-9]{4}|2131|1800)[0-9]{11}$", $ccNum))
+			if (preg_match("/^(3[0-9]{4}|2131|1800)[0-9]{11}$/", $ccNum))
 					return "JCB";
 	 }
 	/**
@@ -1620,7 +1689,7 @@ function woocommerce_clickandpledge_init() {
 			$cnp_payment_method_selection = isset($_POST['cnp_payment_method_selection']) ? $_POST['cnp_payment_method_selection'] : 'CreditCard';
 			$customerrors = array();
 			if($cnp_payment_method_selection == 'CreditCard') {
-				if($_POST['clickandpledge_isRecurring'] == 'on') {
+				if(isset($_POST['clickandpledge_isRecurring']) && $_POST['clickandpledge_isRecurring'] == 'on') {
 					if(empty($_POST['clickandpledge_Periodicity'])) {
 							array_push($customerrors, 'Please select Periodicity');
 						}
@@ -1688,7 +1757,7 @@ function woocommerce_clickandpledge_init() {
 				if(empty($name_on_card)) {
 					array_push($customerrors, 'Please enter Name on Card');
 				}			
-				if (!ereg("^([a-zA-Z0-9\.\,\#\-\ \']){2,50}$", $name_on_card)) {
+				if (!preg_match("/^([a-zA-Z0-9\.\,\#\-\ \']){2,50}$/", $name_on_card)) {
 					array_push($customerrors, 'Please enter the only Alphanumeric and space for Name on Card');
 				}
 				//Card Number
@@ -1890,19 +1959,20 @@ function woocommerce_clickandpledge_init() {
 	     */
 		function get_user_ip() {			
 			 $ipaddress = '';
-			 if ($_SERVER['HTTP_CLIENT_IP'])
+			 if (isset($_SERVER['HTTP_CLIENT_IP']))
 				 $ipaddress = $_SERVER['HTTP_CLIENT_IP'];
-			 else if($_SERVER['HTTP_X_FORWARDED_FOR'])
+			 else if(isset($_SERVER['HTTP_X_FORWARDED_FOR']))
 				 $ipaddress = $_SERVER['HTTP_X_FORWARDED_FOR'];
-			 else if($_SERVER['HTTP_X_FORWARDED'])
+			 else if(isset($_SERVER['HTTP_X_FORWARDED']))
 				 $ipaddress = $_SERVER['HTTP_X_FORWARDED'];
-			 else if($_SERVER['HTTP_FORWARDED_FOR'])
+			 else if(isset($_SERVER['HTTP_FORWARDED_FOR']))
 				 $ipaddress = $_SERVER['HTTP_FORWARDED_FOR'];
-			 else if($_SERVER['HTTP_FORWARDED'])
+			 else if(isset($_SERVER['HTTP_FORWARDED']))
 				 $ipaddress = $_SERVER['HTTP_FORWARDED'];
 			 else
 				 $ipaddress = $_SERVER['REMOTE_ADDR'];
-
+			$parts = explode(',', $ipaddress);
+			if(count($parts) > 1) $ipaddress = $parts[0];
 			 return $ipaddress; 
 		}
 

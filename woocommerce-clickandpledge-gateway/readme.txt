@@ -6,10 +6,10 @@ Tags:              woothemes, woocommerce, cnp, clickandpledge, payment gateway,
 Author URI:        http://www.clickandpledge.com
 Author:            Click & Pledge
 Requires at least: 3.0.1 
-Tested up to:      4.2.2 (WordPress)
-Tested up to:      2.3.5 (WooCommerce)
-Stable tag: 1.3.4
-Version:           1.3.4
+Tested up to:      4.2.2
+Tested up to:      2.3.11 (WooCommerce)
+Stable tag: 1.3.5
+Version:           1.3.5
 License: GPLv2 or later
 
 == Description ==
@@ -26,6 +26,7 @@ Click & Pledge was Founded in May 2000. To be sure, Click & Pledge is not too go
 <strong>Please note:</strong> This addon requires that you have a <a href="http://clickandpledge.com/Pricing" target="_blank"> <strong>Click & Pledge</strong></a> Account to accept credit card and debit card payments. You can get an account at <a href="https://www.clickandpledge.com/Apply" target="_blank"> <strong>Click & Pledge</strong></a>. If you have any questions you can <a href="https://www.clickandpledge.com/Contact" target="_blank"> <strong>Contact Us</strong></a> anytime.
 
 == Installation ==
+<b>Note</b>:<a href="http://manual.clickandpledge.com/WooCommerce.html" target="_blank">Click</a> here for detaildd instructions<br><br>
 <strong>Simply follow these steps to install:</strong><br>
 1. Download & Unzip the file.<br>
 2. Upload the "woocommerce-clickandpledge-gateway" folder to your WordPress Plugins directory.<br>
@@ -65,6 +66,9 @@ Comming soon
 Coming Soon 
 == Changelog ==
 *** Click & Pledge Changelog ***
+2015.06.24 - Version 1.3.5
+* Added feature to allow zero amount processing
+
 2015.06.02 - Version 1.3.4
 * Fixed Item Name issue
 

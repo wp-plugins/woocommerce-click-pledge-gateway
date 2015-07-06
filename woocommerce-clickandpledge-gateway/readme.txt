@@ -8,8 +8,8 @@ Author:            Click & Pledge
 Requires at least: 3.0.1 
 Tested up to:      4.2.2
 Tested up to:      2.3.11 (WooCommerce)
-Stable tag: 1.3.5
-Version:           1.3.5
+Stable tag: 1.3.6
+Version:           1.3.6
 License: GPLv2 or later
 
 == Description ==

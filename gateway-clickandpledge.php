@@ -36,7 +36,7 @@ function woocommerce_clickandpledge_init() {
 	
 		function __construct() { 
 			
-			$this->id				= 'clickandpledge';
+			$this->id				= 'click-pledge';
 			$this->method_title 	= __('Click & Pledge', 'woothemes');
 			$this->icon 			= WP_PLUGIN_URL . "/" . plugin_basename( dirname(__FILE__)) . '/images/CP_Secured.jpg';
 						

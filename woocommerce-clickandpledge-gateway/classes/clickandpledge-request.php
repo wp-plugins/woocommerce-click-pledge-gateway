@@ -147,7 +147,7 @@ class clickandpledge_request {
 		$applicationname=$dom->createElement('Name','CnP_WooCommerce_WordPress');
 		$applicationid=$application->appendChild($applicationname);
 
-		$applicationversion=$dom->createElement('Version','1.3.9');
+		$applicationversion=$dom->createElement('Version','1.3.10');
 		$applicationversion=$application->appendChild($applicationversion);
 
 		$request = $dom->createElement('Request', '');
@@ -884,7 +884,7 @@ class clickandpledge_request {
 				$couponcode.= ";";
 			}
 			if( $couponcode != '' ) {
-			$trans_coupon=$dom->createElement('CouponCode',substr($couponcode,0,-1));
+			$trans_coupon=$dom->createElement('CouponCode',$this->safeString(substr($couponcode,0,-1), 50));
 			$trans_coupon=$transation->appendChild($trans_coupon);
 			}
 		}

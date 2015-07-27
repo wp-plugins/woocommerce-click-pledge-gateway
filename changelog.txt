@@ -1,4 +1,8 @@
 *** Click & Pledge Changelog ***
+2015.07.27 - Version 1.3.11
+* Fixed 'Name Your Price' plugin Total amount issue (Ref:http://forums.clickandpledge.com/forum/platform-product-forums/3rd-party-integrations/woocommerce-wordpress-plugin/17479-problem-with-custom-question-mapping/page2)
+
+*** Click & Pledge Changelog ***
 2015.07.21 - Version 1.3.10
 * Fixed Coupon code issue (Ref:http://forums.clickandpledge.com/node/18053)
 

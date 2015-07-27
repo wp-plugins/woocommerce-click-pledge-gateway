@@ -147,7 +147,7 @@ class clickandpledge_request {
 		$applicationname=$dom->createElement('Name','CnP_WooCommerce_WordPress');
 		$applicationid=$application->appendChild($applicationname);
 
-		$applicationversion=$dom->createElement('Version','1.3.10');
+		$applicationversion=$dom->createElement('Version','1.3.11');
 		$applicationversion=$application->appendChild($applicationversion);
 
 		$request = $dom->createElement('Request', '');
@@ -386,12 +386,10 @@ class clickandpledge_request {
 			} else {
 				$line_subtotal = $pdetails->get_price();
 			}
-			if( get_post_meta( $Item['product_id'] , '_nyp', true ) == 'yes' ) { //This will handle 'WooCommerce Name Your Price' plug-in data price
-				if(isset($Item['nyp']) && $Item['nyp'] != '') {
-					$line_subtotal = $Item['nyp'];
-				}
-			}
-			
+			//This will handle 'WooCommerce Name Your Price' plug-in data price
+			if(isset($Item['nyp']) && $Item['nyp'] != '') {
+				$line_subtotal = $Item['nyp'];
+			}			
 			$addons_total = 0;			
 			if(isset($Item['addons']) && is_array($Item['addons'])) {//This will handle 'WooCommerce Product Add-ons' plug-in data price				
 				foreach($Item['addons'] as $addons_key => $addons_val) {
